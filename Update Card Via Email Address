@@ -1,0 +1,95 @@
+<?php
+session_start();
+// session start needed to hang onto session variable customer ID.
+/*
+	UPDATE CARD via Email Address
+	Ben@gobecreative.com
+*/
+// function called when looking up customer ids for later use.
+function getCusByEmailA($email_A) {
+	try {
+		$response = \Stripe\Customer::all(["limit" => 50, "email" => $email_A ] );
+		return $response->data;
+	} catch (\Exception $e) {
+		Log::error($e);
+		return [];
+	}
+}
+require_once('init.php'); // add your path to PHP SDK point to init.php file
+\Stripe\Stripe::setApiKey("sk_test__YOUR_SECRET_KEY_HERE");
+
+
+?>
+<html>
+<head>
+</head>
+<body>
+<?php 
+	if (isset($_POST['stripeToken'])){
+		try {
+			$tmpCID = trim($_SESSION["cid"]);  // had a white space that needed purging, this is redundant
+			// Can turn to Array of IDS, and foreach to update all... as is updates only one
+			if( empty($tmpCID) ){
+			}else{ 
+				$cu = \Stripe\Customer::retrieve($tmpCID); // stored in session from successful validation
+				$cu->source = $_POST['stripeToken']; // obtained with update form
+				$cu->save();
+				$success = 'Successful Update';
+				echo $success;
+			}
+		}
+		catch(\Stripe\Error\Card $e) {
+			$body = $e->getJsonBody();
+			$err  = $body['error'];
+			$error = $err['message'];
+		}
+	}else{
+		switch ( $_POST['step'] ) {
+		case 'step1':
+			// Lookup Possibel Customer IDs by Email Address
+			$APIresponse = getCusByEmailA( $_POST['email'] );
+			foreach($APIresponse as $key => $values){
+				$update_customers[] = $values['id']; // put all returned IDs in a customer ID array
+			}		
+			if ( !empty( $update_customers ) ){
+				$_SESSION["cid"] = trim($update_customers[0]); // use only the FIRST email address, can turn to foreach to update all.
+				// $_POST['Email'] used to firmly set/preload data-email, and validation message below
+				echo 'We found the account registered to your email, '.$_POST['email'].'.
+					<form action="" method="POST">
+					<script
+					  src="https://checkout.stripe.com/checkout.js" class="stripe-button"
+					  data-key="pk_test__YOUR_PUBLIC_KEY_HERE"
+					  data-image="http://www.gobecreative.com/img/Go_Be_Creative.png"
+					  data-name="YOUR ORGANIZATION NAME"
+					  data-panel-label="Update Card Details"
+					  data-label="Update Card Details"
+					  data-allow-remember-me=false
+					  data-email="'.$_POST['email'].'"
+					  data-locale="auto">
+					  </script>
+					</form>';
+			}else{
+				unset($_SESSION["cid"]); // help purge and keep things clean
+				echo '<form name="cus_lookup" method="post" action="'.htmlspecialchars($_SERVER["PHP_SELF"]).'" id="email_lookup_form">
+					<label for="email">Email</label>
+					<input type="text" name="email" maxlength="80" size="30">
+					<input type="hidden" name="step" value="step1">
+					<input type="submit" value="Find My Account"> 
+					</form>';
+			}		
+		break;
+
+		default:
+			unset($_SESSION["cid"]); // help purge and keep things clean
+			echo '<form name="cus_lookup" method="post" action="'.htmlspecialchars($_SERVER["PHP_SELF"]).'" id="email_lookup_form">
+					<label for="email">Email</label>
+					<input type="text" name="email" maxlength="80" size="30">
+					<input type="hidden" name="step" value="step1">
+					<input type="submit" value="Find My Account"> 
+				</form>';
+		break;
+		}
+	}
+?>
+</body>
+</html>
